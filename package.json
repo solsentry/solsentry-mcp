@@ -1,6 +1,6 @@
 {
   "name": "@solsentry/mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "SolSentry MCP server + TypeScript SDK — Solana threat intelligence. Operator risk, token risk, rug pull detection via mainnet monitoring.",
   "keywords": [
     "solana",
@@ -16,10 +16,10 @@
     "typescript"
   ],
   "homepage": "https://solsentry.app",
-  "bugs": "https://github.com/solsentryai/solsentry-mcp/issues",
+  "bugs": "https://github.com/solsentry/solsentry-mcp/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/solsentryai/solsentry-mcp.git"
+    "url": "git+https://github.com/solsentry/solsentry-mcp.git"
   },
   "license": "MIT",
   "author": "SolSentry <solanasentryai@gmail.com>",
