@@ -1,0 +1,346 @@
+openapi: 3.1.0
+info:
+  title: SolSentry REST API
+  version: "1.0.0"
+  description: |
+    Public read-only API for SolSentry — Solana threat intelligence.
+    Tracks operators behind token launches, bot clusters, and rug pulls.
+
+    All endpoints below the `/v1/` prefix are publicly accessible without
+    authentication. The drain-trace endpoint requires x402 micropayment
+    headers (see `docs/x402-example.md`).
+
+    Live URL: https://api.solsentry.app
+  contact:
+    name: SolSentry
+    url: https://solsentry.app
+    email: solanasentryai@gmail.com
+  license:
+    name: API access free for read endpoints
+    url: https://solsentry.app/docs
+
+servers:
+  - url: https://api.solsentry.app
+    description: Production
+
+tags:
+  - name: stats
+    description: System-wide live statistics
+  - name: operator
+    description: Wallet-as-deployer risk profiles
+  - name: token
+    description: Token mint risk profiles
+  - name: alerts
+    description: Live alert and resolution feeds
+  - name: clusters
+    description: Bot cluster registry
+  - name: forensics
+    description: Drain trace (x402-paid)
+  - name: health
+    description: Liveness and invariants
+
+paths:
+  /v1/stats:
+    get:
+      tags: [stats]
+      summary: System-wide live stats
+      responses:
+        "200":
+          description: Live system metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkStats"
+
+  /v1/operator/{wallet}:
+    get:
+      tags: [operator]
+      summary: Operator risk profile
+      parameters:
+        - $ref: "#/components/parameters/WalletParam"
+      responses:
+        "200":
+          description: Operator profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operator"
+        "404":
+          description: Operator not in database
+
+  /v1/operator/{wallet}/timeline:
+    get:
+      tags: [operator]
+      summary: Chronological deployment history of an operator
+      parameters:
+        - $ref: "#/components/parameters/WalletParam"
+      responses:
+        "200":
+          description: Ordered list of token deploys + outcomes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wallet: { type: string }
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ts: { type: integer, description: "unix seconds" }
+                        mint: { type: string }
+                        outcome: { type: string, enum: [rug, safe, volume_dead, pending] }
+                        risk_at_scan: { type: number }
+
+  /v1/token/{mint}:
+    get:
+      tags: [token]
+      summary: Token risk profile
+      parameters:
+        - name: mint
+          in: path
+          required: true
+          schema: { type: string, minLength: 32, maxLength: 44 }
+      responses:
+        "200":
+          description: Token risk profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Token"
+
+  /v1/top-operators:
+    get:
+      tags: [operator]
+      summary: Leaderboard of worst serial ruggers
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        "200":
+          description: Operator leaderboard
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operators:
+                    type: array
+                    items: { $ref: "#/components/schemas/Operator" }
+
+  /v1/alerts/recent:
+    get:
+      tags: [alerts]
+      summary: Recent CRITICAL/HIGH alerts
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Alert stream
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alerts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ts: { type: integer }
+                        mint: { type: string }
+                        risk_level: { type: string }
+                        risk_score: { type: number }
+                        flags: { type: array, items: { type: string } }
+
+  /v1/resolutions/recent:
+    get:
+      tags: [alerts]
+      summary: Recent rug confirmations / safe verifications
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Outcome resolution stream
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resolutions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ts: { type: integer }
+                        mint: { type: string }
+                        outcome: { type: string, enum: [rug, safe, volume_dead] }
+                        was_correct: { type: boolean }
+
+  /v1/clusters:
+    get:
+      tags: [clusters]
+      summary: Top active bot clusters
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        "200":
+          description: Cluster list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clusters:
+                    type: array
+                    items: { $ref: "#/components/schemas/Cluster" }
+
+  /v1/cluster/{cluster_id}:
+    get:
+      tags: [clusters]
+      summary: Cluster detail
+      parameters:
+        - name: cluster_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Cluster members + patterns
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterDetail"
+
+  /v1/drain-trace/{wallet}:
+    get:
+      tags: [forensics]
+      summary: 10-hop SOL drain trace (x402-paid)
+      description: |
+        Traces SOL outflows from a wallet through up to 10 hops. Free for
+        verified victims (wallets that received SolSentry drain alerts);
+        paid via x402 micropayments otherwise (~$0.001 USDC).
+      parameters:
+        - $ref: "#/components/parameters/WalletParam"
+      responses:
+        "200":
+          description: Drain trace tree
+        "402":
+          description: Payment required (see X-Payment-* headers)
+
+  /v1/x402/stats:
+    get:
+      tags: [forensics]
+      summary: x402 payment ledger stats
+      responses:
+        "200":
+          description: Aggregate query / payment metrics
+
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness check
+      responses:
+        "200":
+          description: Service is up
+
+  /health/invariants:
+    get:
+      tags: [health]
+      summary: Internal invariants check
+      responses:
+        "200":
+          description: Healthy
+        "500":
+          description: Degraded
+
+components:
+  parameters:
+    WalletParam:
+      name: wallet
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 32
+        maxLength: 44
+
+  schemas:
+    NetworkStats:
+      type: object
+      properties:
+        total_predictions: { type: integer }
+        pending: { type: integer }
+        resolved: { type: integer }
+        resolve_rate_pct: { type: number, format: float }
+        accuracy_pct: { type: number, format: float }
+        high_risk_alerts: { type: integer }
+        confirmed_rugs: { type: integer }
+        confirmed_safe: { type: integer }
+        total_operators: { type: integer }
+        serial_ruggers: { type: integer }
+        wallets_with_confirmed_rugs: { type: integer }
+        wallet_profiles_tracked: { type: integer }
+        bot_clusters: { type: integer }
+        runtime_hours: { type: integer }
+
+    Operator:
+      type: object
+      properties:
+        wallet: { type: string }
+        known: { type: boolean }
+        risk_level:
+          type: string
+          enum: [CRITICAL, HIGH, MEDIUM, LOW, CLEAN, UNKNOWN]
+        risk_score: { type: number }
+        risk_label: { type: string }
+        confirmed_rugs: { type: integer }
+        total_tokens: { type: integer }
+        rug_rate_pct: { type: number, format: float }
+        tags: { type: array, items: { type: string } }
+        patterns: { type: array, items: { type: string } }
+
+    Token:
+      type: object
+      properties:
+        mint: { type: string }
+        risk_level:
+          type: string
+          enum: [CRITICAL, HIGH, MEDIUM, LOW, CLEAN, UNKNOWN]
+        risk_score: { type: number }
+        flags: { type: array, items: { type: string } }
+        deployer: { type: string }
+        deployer_risk_level: { type: string }
+        outcome: { type: string, enum: [rug, safe, volume_dead, pending] }
+
+    Cluster:
+      type: object
+      properties:
+        cluster_id: { type: string }
+        size: { type: integer }
+        first_observed: { type: integer }
+        last_observed: { type: integer }
+        tokens_involved: { type: integer }
+
+    ClusterDetail:
+      allOf:
+        - $ref: "#/components/schemas/Cluster"
+        - type: object
+          properties:
+            patterns: { type: array, items: { type: string } }
+            associated_operators: { type: array, items: { type: string } }
+            members:
+              type: array
+              items:
+                type: object
+                properties:
+                  wallet: { type: string }
+                  role: { type: string, enum: [deployer, buyer, lp_remover, shill] }
