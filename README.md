@@ -20,6 +20,19 @@ Skill bundle.
 All three call the public REST API at `api.solsentry.app`. No API key
 required for read endpoints.
 
+### Live system snapshot (May 12, 2026)
+
+- **51K+ scans** processed · **88.1% accuracy** · **0 confirmed false positives in CRITICAL**
+- **5,512 operators** tracked · **1,279 serial deployers** · **18,987 confirmed rugs**
+- **28+ days** continuous mainnet operation on Hetzner VPS
+- **11-endpoint RPC pool** (Helius / Alchemy / RPC Fast tier-0 round-robin)
+- **Multi-source data layer**: Helius DAS + Dune Sim + Covalent + Zerion CLI
+- **Privacy rails integrated**: Cloak + Umbra (rail-agnostic operator screen)
+- **x402 paid endpoints**: mainnet-enforcement ready
+- **Colosseum Frontier 2026** submission · [Arena profile](https://arena.colosseum.org/projects/explore/solsentry-3)
+
+Verify: `curl https://api.solsentry.app/v1/stats`
+
 ## What's in this repo
 
 ```
