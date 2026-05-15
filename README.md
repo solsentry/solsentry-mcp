@@ -20,18 +20,20 @@ Skill bundle.
 All three call the public REST API at `api.solsentry.app`. No API key
 required for read endpoints.
 
-### Live system snapshot (May 12, 2026)
+### Live system snapshot (May 14, 2026)
 
-- **51K+ scans** processed · **88.1% accuracy** · **0 confirmed false positives in CRITICAL**
-- **5,512 operators** tracked · **1,279 serial deployers** · **18,987 confirmed rugs**
-- **28+ days** continuous mainnet operation on Hetzner VPS
-- **11-endpoint RPC pool** (Helius / Alchemy / RPC Fast tier-0 round-robin)
-- **Multi-source data layer**: Helius DAS + Dune Sim + Covalent + Zerion CLI
-- **Privacy rails integrated**: Cloak + Umbra (rail-agnostic operator screen)
+- **56,159 predictions** · **88.8% accuracy** (resolved) · **93.2% resolution rate**
+- **96.6% CRITICAL precision · 98.9% HIGH precision** (607 FP events / 231 unique mints at CRITICAL — every FP is a threshold edge case, full audit at `/v1/predictions/{mint}`)
+- **6,352 operators** tracked · **1,477 serial deployers** · **21,711 confirmed rugs** · **7,968 bot clusters**
+- **742h continuous mainnet** (~31 days) on a single Hetzner VPS
+- **Multi-tier RPC pool**: Helius (DAS + Enhanced TX) + Alchemy + RPC Fast (tier-0 round-robin, Frontier 2026)
+- **Multi-source data layer**: Dune Sim, Covalent / GoldRush, Zerion, Arkham (entity graph), Nansen (wallet labels), InsightX (holder + bundle), Birdeye + DexScreener (price + liquidity), Solscan + Jupiter (metadata)
+- **AI**: Anthropic Claude (multilingual risk explainer, PT-BR primary + EN)
+- **Privacy rails**: Cloak + Umbra (Frontier 2026 partners — rail-agnostic operator screen)
 - **x402 paid endpoints**: mainnet-enforcement ready
 - **Colosseum Frontier 2026** submission · [Arena profile](https://arena.colosseum.org/projects/explore/solsentry-3)
 
-Verify: `curl https://api.solsentry.app/v1/stats`
+Numbers drift daily as predictions resolve — verify live: `curl https://api.solsentry.app/v1/stats`
 
 ## What's in this repo
 
@@ -171,3 +173,12 @@ SolSentry first, drain-trace on that wallet is free.
 ## License
 
 MIT
+
+## Links + Contact
+
+- **Site:** [solsentry.app](https://solsentry.app)
+- **X (project):** [@solsentryai](https://x.com/solsentryai)
+- **Telegram:** [t.me/solsentryai](https://t.me/solsentryai)
+- **GitHub:** [github.com/solsentry](https://github.com/solsentry)
+- **Email:** `hello@solsentry.app`
+- **Built by:** [Crash Diniz · @crashdiniz](https://x.com/crashdiniz)
