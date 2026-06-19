@@ -9,21 +9,11 @@ SolSentry packages its public operator-risk intelligence surface as an MCP
 server, a TypeScript SDK, and a skills bundle. All interfaces use the live REST
 API at `https://api.solsentry.app`.
 
-## Canonical live snapshot
+## Live references
 
-- `80,017` predictions tracked
-- `91.2%` aggregate accuracy
-- `97.9% CRITICAL precision - auditable per-mint`
-- `95.3% HIGH precision`
-- `94.4% MEDIUM precision`
-- `10,112` operators profiled
-- `7,004` serial ruggers identified
-- `78.0%` dev wallet coverage
-- `~1,367h` continuous runtime
-- package version: `v0.2.2`
-- backend version: `v2.3.21`
-
-Live references:
+Precision is auditable per-mint at `/v1/predictions/{mint}` (live). Pull any
+current system numbers from the live API rather than this README — never cite a
+hardcoded accuracy/precision figure or operator-level aggregate as a standing fact.
 
 - API stats: `https://api.solsentry.app/v1/stats`
 - NPM: `https://www.npmjs.com/package/@solsentry/mcp`
@@ -124,7 +114,7 @@ console.log(stats);
 
 ```bash
 curl https://api.solsentry.app/v1/stats
-curl https://api.solsentry.app/v1/operator/4kxscuteRLQdNiTXA33YYsvywAPNA6DQTifswxjL5pH1
+curl https://api.solsentry.app/v1/operator/<wallet-address>
 curl https://api.solsentry.app/v1/top-operators?limit=5
 ```
 
@@ -137,7 +127,8 @@ curl https://api.solsentry.app/v1/top-operators?limit=5
 
 ## Notes
 
-- Public quality claim: `97.9% CRITICAL precision - auditable per-mint`.
+- Public quality claim: precision is auditable per-mint at `/v1/predictions/{mint}`
+  (live) — re-verify on the day; never ship a hardcoded precision number.
 
 ## Requirements
 
