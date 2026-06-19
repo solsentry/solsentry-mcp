@@ -11,11 +11,11 @@ import { getNetworkStats, getNetworkStatsSchema } from "./tools/get_network_stat
 import { explainRisk, explainRiskSchema } from "./tools/explain_risk.js";
 
 const INSTRUCTIONS =
-  "SolSentry is a Solana threat intelligence system. It tracks serial rug pull operators, " +
-  "bot clusters, and KOL networks across 20,000+ token scans with 83.8% accuracy and zero " +
-  "false positives in CRITICAL risk level. Use check_operator before interacting with any " +
-  "token deployer. Use check_token before buying a token. Use get_top_operators to see the " +
-  "worst serial ruggers currently active on Solana.";
+  "SolSentry is a Solana threat intelligence system. It tracks serial rug-pull operators, " +
+  "bot clusters, and funding networks using persistent operator memory — every verdict is " +
+  "auditable per-mint at /v1/predictions/{mint}. Use check_operator before interacting with " +
+  "any token deployer, check_token before buying a token, and get_top_operators to see the " +
+  "serial ruggers currently active on Solana.";
 
 export function createServer(client: SolSentryClient): Server {
   const server = new Server(
