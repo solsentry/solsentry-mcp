@@ -96,7 +96,6 @@ npx -y @solsentry/mcp
 |---|---|
 | `check_operator` | Risk profile of a wallet as a token deployer |
 | `check_token` | Risk profile of a token mint |
-| `get_top_operators` | Leaderboard of serial ruggers |
 | `get_network_stats` | System-wide public metrics |
 | `explain_risk` | Plain-language summary for a wallet or mint |
 
@@ -115,7 +114,7 @@ console.log(stats);
 ```bash
 curl https://api.solsentry.app/v1/stats
 curl https://api.solsentry.app/v1/operator/<wallet-address>
-curl https://api.solsentry.app/v1/top-operators?limit=5
+curl https://api.solsentry.app/v1/predictions/<mint-address>
 ```
 
 ## Configuration
