@@ -2,6 +2,21 @@
 
 All notable changes to `@solsentry/mcp` are documented here.
 
+## [0.3.0] - 2026-07-09
+
+### Removed (breaking)
+- `get_top_operators` tool. Its backend endpoint (`/v1/top-operators`) is
+  intentionally gated off: fee-payer != deployer attribution inflates
+  system-wide operator aggregates, so the serial-operator leaderboard is not
+  served. Per-address lookup (`check_operator` -> `/v1/operator/{wallet}`)
+  is the supported counterparty primitive.
+
+### Fixed
+- MCP handshake advertised `0.1.0` while the package shipped `0.2.3` — version
+  is now single-sourced (`src/version.ts`) and pinned by a test.
+- `npm test` globbed `dist/**/*.test.js`, which matched nothing: no test had
+  ever run. Glob repaired; the suite now actually executes.
+
 ## [0.2.3] - 2026-06-18
 
 ### Fixed
