@@ -22,7 +22,7 @@ interface OperatorResponse {
   known?: boolean;
   summary?: string;
   confirmed_rugs?: number;
-  total_tokens_tracked?: number;
+  total_tokens?: number;
   rug_rate_pct?: number;
   risk_label?: string;
   tags?: string[];
@@ -44,8 +44,11 @@ export async function explainRisk(
 
   // Try as operator first
   try {
+    // B-E2E-3 (2026-07-11): the live /v1/operator response field is
+    // `total_tokens` — `total_tokens_tracked` never existed, so this gate was
+    // always false and known operators fell through to "No data found".
     const op = await client.get<OperatorResponse>(`/v1/operator/${encodeURIComponent(addr)}`);
-    if (op.known && (op.total_tokens_tracked ?? 0) > 0) {
+    if (op.known && (op.total_tokens ?? 0) > 0) {
       return { explanation: op.summary ?? "(no summary available)", source: "operator" };
     }
   } catch {
