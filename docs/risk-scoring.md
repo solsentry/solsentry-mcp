@@ -12,7 +12,7 @@ canonical configuration in the production scanner (`core/risk_config.py`).
 | `HIGH` | ≥ 60 | 5+ confirmed rugs | Score ≥ 80 |
 | `MEDIUM` | ≥ 40 | 2+ confirmed rugs | Score ≥ 50 |
 | `LOW` | ≥ 20 | 1 confirmed rug | Score > 0 |
-| `CLEAN` | — | No rugs, has tracked tokens | — |
+| `CLEAN` | — | No rugs, has tracked tokens | Token resolved confirmed-safe (cleared false positive) |
 | `UNKNOWN` | — | Not in database | Not yet scanned |
 
 `UNKNOWN` is **not** equivalent to safe. It means SolSentry has not

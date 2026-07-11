@@ -2,6 +2,21 @@
 
 All notable changes to `@solsentry/mcp` are documented here.
 
+## [0.3.1] - 2026-07-11
+
+### Fixed
+- `explain_risk` returned "No data found … insufficient data" for wallets the
+  system knows as operators (e.g. serial ruggers with 1000+ confirmed rugs).
+  The operator gate read `total_tokens_tracked`, a field the live
+  `/v1/operator` response never had (it returns `total_tokens`), so the gate
+  was always false and every wallet fell through to the token lookup. Field
+  name fixed; regression test added (`src/tools/explain_risk.test.ts`).
+
+### Docs
+- `risk-scoring.md`: `CLEAN` token criteria documented — a token whose outcome
+  verification resolved it confirmed-safe (cleared false positive) now reports
+  `risk_level=CLEAN` on `/v1/token` instead of the stale predicted tier.
+
 ## [0.3.0] - 2026-07-09
 
 ### Removed (breaking)
