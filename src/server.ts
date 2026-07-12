@@ -57,6 +57,24 @@ export function createServer(client: SolSentryClient): Server {
   return server;
 }
 
+// Reject missing/blank required string args with a clean message BEFORE the
+// handler runs. Without this the MCP SDK forwards `{}` straight through and a
+// tool builds `/v1/operator/undefined` (200 known=false noise) or crashes on
+// `addr.slice(undefined)` (explain_risk) — neither is an honest error for the
+// caller. Central so every tool is covered and future tools inherit it.
+export function requireStringArgs(
+  args: Record<string, unknown>,
+  required: readonly string[],
+  toolName: string,
+): void {
+  for (const key of required) {
+    const v = args[key];
+    if (typeof v !== "string" || v.trim() === "") {
+      throw new Error(`${toolName} requires a non-empty string argument '${key}'`);
+    }
+  }
+}
+
 async function dispatch(
   client: SolSentryClient,
   name: string,
@@ -64,12 +82,15 @@ async function dispatch(
 ): Promise<unknown> {
   switch (name) {
     case "check_operator":
+      requireStringArgs(args, checkOperatorSchema.inputSchema.required, name);
       return checkOperator(client, args as { wallet_address: string });
     case "check_token":
+      requireStringArgs(args, checkTokenSchema.inputSchema.required, name);
       return checkToken(client, args as { mint_address: string });
     case "get_network_stats":
       return getNetworkStats(client);
     case "explain_risk":
+      requireStringArgs(args, explainRiskSchema.inputSchema.required, name);
       return explainRisk(client, args as { address: string });
     default:
       throw new Error(`Unknown tool: ${name}`);
