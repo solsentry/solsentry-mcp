@@ -44,6 +44,14 @@ test("explain_risk falls through to token for a non-operator address", async () 
   assert.match(res.explanation, /CRITICAL/);
 });
 
+test("explain_risk does not crash on a missing address (B-FS-5)", async () => {
+  const client = clientReturning({});
+  // @ts-expect-error — deliberately omit the required address to prove the guard
+  const res = await explainRisk(client, {});
+  assert.equal(res.source, "unknown");
+  assert.match(res.explanation, /requires an 'address'/);
+});
+
 test("explain_risk degrades honestly when nothing is known", async () => {
   const client = clientReturning({
     "/v1/operator/": { known: false },

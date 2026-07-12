@@ -11,6 +11,15 @@ All notable changes to `@solsentry/mcp` are documented here.
   `/v1/operator` response never had (it returns `total_tokens`), so the gate
   was always false and every wallet fell through to the token lookup. Field
   name fixed; regression test added (`src/tools/explain_risk.test.ts`).
+- Missing/blank required tool arguments no longer reach the handler: a call
+  with `{}` used to forward `undefined` — `explain_risk` crashed with an opaque
+  "Cannot read properties of undefined (reading 'slice')" and `check_operator`
+  queried `/v1/operator/undefined`. A central `requireStringArgs` guard now
+  rejects them with a clean `"<tool> requires a non-empty string argument
+  '<arg>'"` (B-FS-5). `explain_risk` also guards its own address (defense in
+  depth, since it is exported/callable directly).
+- The SDK client advertised a stale `User-Agent: solsentry-mcp/0.2.0`; it now
+  tracks the real package version (B-FS-4).
 
 ### Docs
 - `risk-scoring.md`: `CLEAN` token criteria documented — a token whose outcome

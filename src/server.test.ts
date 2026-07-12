@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { VERSION } from "./version.js";
+import { requireStringArgs } from "./server.js";
 import { checkOperatorSchema } from "./tools/check_operator.js";
 import { checkTokenSchema } from "./tools/check_token.js";
 import { getNetworkStatsSchema } from "./tools/get_network_stats.js";
@@ -28,4 +29,39 @@ test("no tool advertises the gated operator leaderboard", () => {
   ];
   assert.equal(names.includes("get_top_operators" as never), false);
   assert.equal(new Set(names).size, names.length, "tool names must be unique");
+});
+
+// B-FS-5 (2026-07-11): dispatch cast args blindly, so a call with `{}` forwarded
+// `undefined` into the handler — explain_risk crashed on addr.slice, check_operator
+// hit /v1/operator/undefined. requireStringArgs rejects missing/blank required
+// args up front; the server's try/catch turns the throw into isError content.
+test("requireStringArgs throws on a missing required arg (B-FS-5)", () => {
+  assert.throws(
+    () => requireStringArgs({}, explainRiskSchema.inputSchema.required, "explain_risk"),
+    /explain_risk requires a non-empty string argument 'address'/,
+  );
+});
+
+test("requireStringArgs throws on a blank/whitespace arg", () => {
+  assert.throws(
+    () => requireStringArgs({ wallet_address: "   " }, checkOperatorSchema.inputSchema.required, "check_operator"),
+    /check_operator requires a non-empty string argument 'wallet_address'/,
+  );
+});
+
+test("requireStringArgs throws on a wrong-typed arg", () => {
+  assert.throws(
+    () => requireStringArgs({ mint_address: 12345 }, checkTokenSchema.inputSchema.required, "check_token"),
+    /check_token requires a non-empty string argument 'mint_address'/,
+  );
+});
+
+test("requireStringArgs passes a valid arg", () => {
+  assert.doesNotThrow(() =>
+    requireStringArgs(
+      { wallet_address: "4kxscuteRLQdNiTXA33YYsvywAPNA6DQTifswxjL5pH1" },
+      checkOperatorSchema.inputSchema.required,
+      "check_operator",
+    ),
+  );
 });

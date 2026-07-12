@@ -41,6 +41,16 @@ export async function explainRisk(
   args: { address: string },
 ): Promise<{ explanation: string; source: "operator" | "token" | "unknown" }> {
   const addr = args.address;
+  // Defense-in-depth: the server dispatch already guards required args, but
+  // this fn is exported/callable directly — never let a missing address reach
+  // `addr.slice(...)` and crash with an opaque "Cannot read properties of
+  // undefined" (B-FS-5).
+  if (typeof addr !== "string" || addr.trim() === "") {
+    return {
+      explanation: "explain_risk requires an 'address' (a Solana wallet or token mint).",
+      source: "unknown",
+    };
+  }
 
   // Try as operator first
   try {

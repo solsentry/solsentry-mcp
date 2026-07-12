@@ -1,5 +1,7 @@
+import { VERSION } from "./version.js";
+
 const DEFAULT_API_URL = "https://api.solsentry.app";
-const USER_AGENT = "solsentry-mcp/0.2.0";
+const USER_AGENT = `solsentry-mcp/${VERSION}`;
 
 export interface SolSentryClientOptions {
   apiUrl?: string;
