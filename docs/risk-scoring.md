@@ -104,7 +104,6 @@ Public endpoints serve cached responses to reduce backend load:
 | Endpoint pattern | TTL |
 |---|---|
 | `/v1/stats` | 30s |
-| `/v1/top-operators` | 60s |
 | `/v1/alerts/recent` | 5s |
 | `/v1/clusters` | 120s |
 | `/v1/resolutions/recent` | 5s |
