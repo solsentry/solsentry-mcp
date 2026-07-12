@@ -78,8 +78,8 @@ wallets, similar amounts, within seconds), this is **insider bundling**
 — often by snipers, not the dev.
 
 ```bash
-# Look for cluster overlap on the early buyers
-curl "https://api.solsentry.app/v1/cluster/by-token/{mint}"
+# Look for bundle / cluster overlap on the early buyers
+curl "https://api.solsentry.app/v1/token/{mint}/bundle-evidence"
 ```
 
 Bundle activity around a launch is one of the strongest historical

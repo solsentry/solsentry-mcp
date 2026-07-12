@@ -45,7 +45,6 @@ when and how to invoke them.
 |---|---|
 | `check_operator` | Risk profile of a wallet as a token deployer |
 | `check_token` | Risk profile of a token mint |
-| `get_top_operators` | Leaderboard of worst serial ruggers |
 | `get_network_stats` | System-wide live stats |
 | `explain_risk` | Plain-English risk summary for any address |
 
