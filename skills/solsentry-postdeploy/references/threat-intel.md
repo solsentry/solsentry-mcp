@@ -21,7 +21,6 @@ monitoring, launching), prefer the dedicated reference instead of this one.
 | `check_operator(wallet)` | Is this wallet a known deployer? | `GET /v1/operator/{wallet}` |
 | `check_token(mint)` | Is this mint a known scam / clean? | `GET /v1/token/{mint}` |
 | `explain_risk(address)` | Plain-English summary for any address | derived |
-| `get_top_operators(limit)` | Worst serial ruggers leaderboard | `GET /v1/top-operators?limit=N` |
 | `get_network_stats()` | System-wide live stats | `GET /v1/stats` |
 
 ## Response shape (operator)
