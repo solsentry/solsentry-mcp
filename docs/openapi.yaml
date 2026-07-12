@@ -90,7 +90,7 @@ paths:
                       properties:
                         ts: { type: integer, description: "unix seconds" }
                         mint: { type: string }
-                        outcome: { type: string, enum: [rug, safe, volume_dead, pending] }
+                        final_outcome: { type: string, enum: [confirmed_scam, confirmed_safe, pending] }
                         risk_at_scan: { type: number }
 
   /v1/token/{mint}:
@@ -113,22 +113,14 @@ paths:
   /v1/top-operators:
     get:
       tags: [operator]
-      summary: Leaderboard of worst serial ruggers
-      parameters:
-        - name: limit
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      summary: "Leaderboard — intentionally NOT served (gated)"
+      description: |
+        Returns 404 by design. A public worst-operator leaderboard is not
+        served: fee-payer != deployer attribution inflates system-wide operator
+        aggregates. Use per-address lookup (/v1/operator/{wallet}) instead.
       responses:
-        "200":
-          description: Operator leaderboard
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  operators:
-                    type: array
-                    items: { $ref: "#/components/schemas/Operator" }
+        "404":
+          description: Not served (gated by design)
 
   /v1/alerts/recent:
     get:
@@ -180,7 +172,7 @@ paths:
                       properties:
                         ts: { type: integer }
                         mint: { type: string }
-                        outcome: { type: string, enum: [rug, safe, volume_dead] }
+                        final_outcome: { type: string, enum: [confirmed_scam, confirmed_safe, pending] }
                         was_correct: { type: boolean }
 
   /v1/clusters:
@@ -227,7 +219,9 @@ paths:
       description: |
         Traces SOL outflows from a wallet through up to 10 hops. Free for
         verified victims (wallets that received SolSentry drain alerts);
-        paid via x402 micropayments otherwise (~$0.001 USDC).
+        otherwise paid via the standard x402 gateway at
+        /x402/v1/drain-trace/{wallet} — $0.05 USDC per the pricing catalog
+        (see docs/x402-example.md).
       parameters:
         - $ref: "#/components/parameters/WalletParam"
       responses:
@@ -312,14 +306,32 @@ components:
       type: object
       properties:
         mint: { type: string }
+        known: { type: boolean }
         risk_level:
           type: string
           enum: [CRITICAL, HIGH, MEDIUM, LOW, CLEAN, UNKNOWN]
         risk_score: { type: number }
+        final_outcome: { type: string, enum: [confirmed_scam, confirmed_safe, pending] }
         flags: { type: array, items: { type: string } }
-        deployer: { type: string }
-        deployer_risk_level: { type: string }
-        outcome: { type: string, enum: [rug, safe, volume_dead, pending] }
+        summary: { type: string, description: "Human-readable EN verdict (language-neutral codes live in `flags`)." }
+        is_bundle: { type: boolean }
+        dev_wallet: { type: string, nullable: true }
+        operator:
+          type: object
+          nullable: true
+          properties:
+            wallet: { type: string }
+            risk_level: { type: string }
+            confirmed_rugs: { type: integer }
+            risk_label: { type: string }
+        symbol: { type: string, nullable: true }
+        predicted_at: { type: string, nullable: true }
+        social:
+          type: object
+          properties:
+            kols: { type: array, items: { type: object } }
+            links: { type: object }
+        latency_ms: { type: number }
 
     Cluster:
       type: object
