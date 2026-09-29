@@ -25,15 +25,17 @@ monitoring, launching), prefer the dedicated reference instead of this one.
 
 ## Response shape (operator)
 
+Illustrative values.
+
 ```json
 {
-  "wallet": "4kxscute...",
+  "wallet": "<WALLET_ADDRESS>",
   "known": true,
   "risk_level": "CRITICAL",
   "risk_score": 100,
-  "confirmed_rugs": 624,
-  "total_tokens": 629,
-  "rug_rate_pct": 99.2,
+  "confirmed_rugs": 40,
+  "total_tokens": 50,
+  "rug_rate_pct": 80.0,
   "tags": ["serial_rugger", "bundle_lp_remover"],
   "patterns": ["fast_rug_<24h", "mint_authority_kept"]
 }

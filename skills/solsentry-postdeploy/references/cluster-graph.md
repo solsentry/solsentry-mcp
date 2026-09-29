@@ -33,7 +33,7 @@ want to understand the **graph** around an address, not just the address itself.
     "shared_funding_wallet",
     "common_deploy_window"
   ],
-  "associated_operators": ["4kxscute...", "Hg7K..."],
+  "associated_operators": ["<WALLET_A>", "<WALLET_B>"],
   "tokens_involved": 18,
   "first_observed": 1772401200,
   "last_observed": 1776899451,
