@@ -6,9 +6,15 @@ info:
     Public read-only API for SolSentry — Solana threat intelligence.
     Tracks operators behind token launches, bot clusters, and rug pulls.
 
-    All endpoints below the `/v1/` prefix are publicly accessible without
-    authentication. The drain-trace endpoint requires x402 micropayment
-    headers (see `docs/x402-example.md`).
+    The read endpoints below the `/v1/` prefix are publicly accessible without
+    authentication. Some expensive routes (drain-trace, dossier) can be
+    payment-gated depending on server configuration; the paid path is the
+    x402 gateway under `/x402/v1/*` (see `docs/x402-example.md`), and the
+    price in the live 402 challenge is authoritative. `/health/invariants` is
+    admin-only.
+
+    Numbers such as accuracy and counts change constantly: read them from
+    `/v1/stats`, never from this document.
 
     Live URL: https://api.solsentry.app
   contact:
@@ -35,9 +41,9 @@ tags:
   - name: clusters
     description: Bot cluster registry
   - name: forensics
-    description: Drain trace (x402-paid)
+    description: Drain trace (paid via x402, free for on-chain-verified victims)
   - name: health
-    description: Liveness and invariants
+    description: Liveness (and an admin-only invariants check)
 
 paths:
   /v1/stats:
@@ -56,47 +62,78 @@ paths:
     get:
       tags: [operator]
       summary: Operator risk profile
+      description: |
+        Risk profile of a wallet as a token deployer. An unknown wallet is not
+        an error: it returns HTTP 200 with `known: false` and
+        `risk_level: UNKNOWN`. Unknown is not a clean record.
+
+        Operator levels come from the confirmed-rug count: CRITICAL >= 10,
+        HIGH >= 5, MEDIUM >= 2, LOW >= 1, CLEAN if the wallet deployed tokens
+        but has no rugs, UNKNOWN otherwise.
+
+        `attribution` says how well the wallet-to-mint deployer link behind
+        the counts was verified on-chain. When it is `unverified` the counts
+        are withheld (zeroed): that is not the same as clean.
       parameters:
         - $ref: "#/components/parameters/WalletParam"
       responses:
         "200":
-          description: Operator profile
+          description: Operator profile, or `known:false` for an unknown wallet
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Operator"
-        "404":
-          description: Operator not in database
+        "400":
+          description: Input looks like a case alias rather than a wallet
 
   /v1/operator/{wallet}/timeline:
     get:
       tags: [operator]
       summary: Chronological deployment history of an operator
+      description: |
+        Tokens deployed by the operator inside a window, newest first, plus
+        per-day deploy/outcome buckets. An unknown operator returns HTTP 200
+        with `known: false`, `error: "operator not found"` and empty `tokens`
+        and `buckets_daily`.
       parameters:
         - $ref: "#/components/parameters/WalletParam"
+        - name: window_days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365, default: 90 }
+        - name: limit
+          in: query
+          description: Maximum tokens returned (daily buckets still cover the whole window).
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
+        - name: outcome
+          in: query
+          description: Filter tokens by outcome. Unrecognised values are ignored.
+          schema: { type: string, enum: [all, scam, safe, pending] }
       responses:
         "200":
-          description: Ordered list of token deploys + outcomes
+          description: Deployment history
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  wallet: { type: string }
-                  events:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        ts: { type: integer, description: "unix seconds" }
-                        mint: { type: string }
-                        final_outcome: { type: string, enum: [confirmed_scam, confirmed_safe, pending] }
-                        risk_at_scan: { type: number }
+                $ref: "#/components/schemas/OperatorTimeline"
 
   /v1/token/{mint}:
     get:
       tags: [token]
       summary: Token risk profile
+      description: |
+        Token tiers: CRITICAL >= 80, HIGH >= 60, MEDIUM >= 50, LOW > 0. A
+        resolved outcome overrides the score: `confirmed_scam` forces
+        CRITICAL and `confirmed_safe` forces CLEAN.
+
+        A mint the scanner has not seen is scanned on demand
+        (`scanned_on_demand: true`); that response returns plain-English
+        reasons in `flags`, plus `risk_factors`, `holders` and `market`.
+        Flags on scored mints are display strings with an emoji prefix; match
+        on the flag name (see `docs/flags.md`).
+
+        `dev_wallet` is not always a proven deployer: check
+        `dev_wallet_attribution` (verified | unverified | refused). When it is
+        `refused`, `dev_wallet` and `operator` are null.
       parameters:
         - name: mint
           in: path
@@ -109,6 +146,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Token"
+        "400":
+          description: Invalid mint (must be base58, 32-44 characters)
+        "503":
+          description: Scan capacity exhausted; retry after the `Retry-After` header
+        "504":
+          description: On-demand scan timed out
 
   /v1/top-operators:
     get:
@@ -125,11 +168,19 @@ paths:
   /v1/alerts/recent:
     get:
       tags: [alerts]
-      summary: Recent CRITICAL/HIGH alerts
+      summary: Recent alerts at or above a risk floor
       parameters:
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: min_risk
+          in: query
+          description: Minimum risk score (default 70).
+          schema: { type: integer, minimum: 0, maximum: 100, default: 70 }
+        - name: since
+          in: query
+          description: Only alerts predicted after this unix timestamp.
+          schema: { type: number }
       responses:
         "200":
           description: Alert stream
@@ -138,16 +189,32 @@ paths:
               schema:
                 type: object
                 properties:
+                  count: { type: integer }
+                  server_time: { type: integer, description: "unix seconds" }
+                  latency_ms: { type: number }
                   alerts:
                     type: array
                     items:
                       type: object
                       properties:
-                        ts: { type: integer }
                         mint: { type: string }
-                        risk_level: { type: string }
+                        symbol: { type: string, nullable: true }
                         risk_score: { type: number }
-                        flags: { type: array, items: { type: string } }
+                        risk_level: { type: string }
+                        predicted_at: { type: integer, description: "unix seconds" }
+                        age_seconds: { type: integer }
+                        dev_wallet: { type: string, nullable: true }
+                        dev_known: { type: boolean }
+                        dev_confirmed_rugs: { type: integer }
+                        flags:
+                          type: array
+                          items: { type: string }
+                          description: Display strings with an emoji prefix; match on the flag name.
+                        platform: { type: string, nullable: true }
+                        pump_stage: { type: string, nullable: true }
+                        is_bundle: { type: boolean }
+                        liquidity_usd: { type: number, nullable: true }
+                        final_outcome: { type: string, enum: [confirmed_scam, confirmed_safe, pending] }
 
   /v1/resolutions/recent:
     get:
@@ -156,33 +223,66 @@ paths:
       parameters:
         - name: limit
           in: query
-          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: window_hours
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 720, default: 24 }
+        - name: correct_only
+          in: query
+          schema: { type: boolean, default: false }
       responses:
         "200":
-          description: Outcome resolution stream
+          description: Outcome resolution stream with a window accuracy summary
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  count: { type: integer }
+                  latency_ms: { type: number }
+                  accuracy_pct_in_window: { type: number, description: "Window figure only; system-wide numbers live at /v1/stats." }
+                  correct_count: { type: integer }
+                  miss_count: { type: integer }
                   resolutions:
                     type: array
                     items:
                       type: object
                       properties:
-                        ts: { type: integer }
                         mint: { type: string }
+                        symbol: { type: string, nullable: true }
+                        predicted_risk: { type: number }
+                        predicted_level: { type: string }
                         final_outcome: { type: string, enum: [confirmed_scam, confirmed_safe, pending] }
                         was_correct: { type: boolean }
+                        predicted_at: { type: integer, description: "unix seconds" }
+                        resolved_at: { type: integer, description: "unix seconds" }
+                        resolve_latency_hours: { type: number }
+                        dev_wallet: { type: string, nullable: true }
 
   /v1/clusters:
     get:
       tags: [clusters]
-      summary: Top active bot clusters
+      summary: Bot cluster registry
+      description: |
+        Clusters are inferred from on-chain co-activity; membership is
+        evidence of a pattern, not proof of coordination. This route can take
+        several seconds. There is no wallet filter: each cluster lists only up
+        to 5 `sample_wallets` and 5 `operators`. Use
+        `/v1/operator/{wallet}/network` to find the clusters of one wallet.
       parameters:
         - name: limit
           in: query
-          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: min_size
+          in: query
+          schema: { type: integer, minimum: 2, maximum: 100, default: 5 }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [risk, size, recent], default: risk }
+        - name: since
+          in: query
+          description: Unix timestamp; only clusters active after it.
+          schema: { type: number }
       responses:
         "200":
           description: Cluster list
@@ -191,6 +291,9 @@ paths:
               schema:
                 type: object
                 properties:
+                  count: { type: integer }
+                  total_clusters: { type: integer }
+                  latency_ms: { type: number }
                   clusters:
                     type: array
                     items: { $ref: "#/components/schemas/Cluster" }
@@ -206,37 +309,70 @@ paths:
           schema: { type: string }
       responses:
         "200":
-          description: Cluster members + patterns
+          description: Cluster members, associated tokens and edges
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClusterDetail"
+        "404":
+          description: Cluster not found
 
   /v1/drain-trace/{wallet}:
     get:
       tags: [forensics]
-      summary: 10-hop SOL drain trace (x402-paid)
+      summary: Multi-hop SOL drain trace (paid, free for verified victims)
       description: |
-        Traces SOL outflows from a wallet through up to 10 hops. Free for
-        verified victims (wallets that received SolSentry drain alerts);
-        otherwise paid via the standard x402 gateway at
-        /x402/v1/drain-trace/{wallet} — $0.05 USDC per the pricing catalog
-        (see docs/x402-example.md).
+        Traces SOL outflows from a wallet hop by hop until it reaches an
+        exchange, mixer or bridge, or the hop cap.
+
+        Pricing: paid via the standard x402 gateway at
+        `/x402/v1/drain-trace/{wallet}`; the price in the live 402 challenge is
+        authoritative (see `docs/x402-example.md`). It is free only when
+        `verified=1` is passed and the wallet is confirmed on-chain as a
+        drained victim (`free_via_victimhood: true` in the response). Otherwise
+        the request goes through the payment gate.
       parameters:
         - $ref: "#/components/parameters/WalletParam"
+        - name: max_hops
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 15, default: 10 }
+        - name: max_txs
+          in: query
+          description: Transactions examined per hop.
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: token
+          in: query
+          description: Optional token name for the report context.
+          schema: { type: string }
+        - name: risk
+          in: query
+          description: Optional origin-token risk score, echoed back.
+          schema: { type: integer, minimum: 0, maximum: 100, default: 0 }
+        - name: verified
+          in: query
+          description: Ask the server to verify victimhood on-chain (free path).
+          schema: { type: string, enum: ["1", "true", "yes"] }
       responses:
         "200":
-          description: Drain trace tree
+          description: Drain trace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrainTrace"
+        "400":
+          description: Invalid wallet address
         "402":
-          description: Payment required (see X-Payment-* headers)
+          description: Payment required
+        "502":
+          description: Trace failed
 
   /v1/x402/stats:
     get:
       tags: [forensics]
-      summary: x402 payment ledger stats
+      summary: x402 payment ledger stats (public aggregates)
       responses:
         "200":
-          description: Aggregate query / payment metrics
+          description: Aggregate query and settled-payment metrics, per-tool counts for public tools, treasury wallet
 
   /health:
     get:
@@ -249,10 +385,13 @@ paths:
   /health/invariants:
     get:
       tags: [health]
-      summary: Internal invariants check
+      summary: Internal invariants check (admin-only)
+      description: Requires an admin token; anonymous callers receive 401. Not part of the public API.
       responses:
         "200":
           description: Healthy
+        "401":
+          description: Admin authentication required
         "500":
           description: Degraded
 
@@ -270,12 +409,17 @@ components:
   schemas:
     NetworkStats:
       type: object
+      description: Live system metrics. Values change constantly; never hardcode them.
       properties:
         total_predictions: { type: integer }
         pending: { type: integer }
         resolved: { type: integer }
         resolve_rate_pct: { type: number, format: float }
         accuracy_pct: { type: number, format: float }
+        precision_by_tier: { type: object, additionalProperties: true }
+        critical_precision_pct: { type: number, format: float }
+        per_mint: { type: object, additionalProperties: true }
+        critical_precision_per_mint_pct: { type: number, format: float }
         high_risk_alerts: { type: integer }
         confirmed_rugs: { type: integer }
         confirmed_safe: { type: integer }
@@ -284,23 +428,118 @@ components:
         wallets_with_confirmed_rugs: { type: integer }
         wallet_profiles_tracked: { type: integer }
         bot_clusters: { type: integer }
-        runtime_hours: { type: integer }
+        dev_wallet_coverage_pct: { type: number, format: float }
+        predictions_with_dev_wallet: { type: integer }
+        runtime_hours: { type: number, format: float }
+        service_start_ts: { type: number }
+        avg_resolve_latency_hours: { type: number, format: float }
+        last_scan_at: { type: integer }
+        last_resolution_at: { type: integer }
+        server_time: { type: integer }
+        latency_ms: { type: number }
 
     Operator:
       type: object
       properties:
         wallet: { type: string }
-        known: { type: boolean }
+        known: { type: boolean, description: "false for a wallet the system has never seen deploying (HTTP 200, not 404)." }
+        operator_id: { type: string, nullable: true }
         risk_level:
           type: string
           enum: [CRITICAL, HIGH, MEDIUM, LOW, CLEAN, UNKNOWN]
+          description: "From confirmed_rugs: CRITICAL >= 10, HIGH >= 5, MEDIUM >= 2, LOW >= 1, CLEAN if tokens deployed but no rugs, UNKNOWN otherwise."
         risk_score: { type: number }
-        risk_label: { type: string }
+        risk_label:
+          type: string
+          description: "Derived from the level: serial_rugger (CRITICAL/HIGH), suspicious (MEDIUM), mixed (LOW), legit or new (CLEAN), unknown. Sticky labels trader_not_deployer and syndicate_funder pass through."
+        summary: { type: string }
         confirmed_rugs: { type: integer }
+        confirmed_safe: { type: integer }
         total_tokens: { type: integer }
+        pending: { type: integer }
         rug_rate_pct: { type: number, format: float }
+        counts: { type: string, enum: [distinct_mints], description: "Every count above is distinct mints." }
+        prediction_rows: { type: integer, description: "Raw prediction rows behind the counts (re-scans included); informative only." }
         tags: { type: array, items: { type: string } }
         patterns: { type: array, items: { type: string } }
+        is_kol: { type: boolean }
+        entity_label: { type: string, nullable: true }
+        entity: { type: object, nullable: true, additionalProperties: true }
+        attribution:
+          type: string
+          enum: [verified, partial, refuted, unverified]
+          description: |
+            How well the deployer link behind the counts was verified on-chain.
+            verified = exact; partial = counts are a floor; refuted = served as
+            0, a verified answer (the wallet paid fees but did not author the
+            mints); unverified = counts and risk_score withheld (zeroed), which
+            is NOT a clean record. Absent when no attribution state exists.
+        attribution_note: { type: string }
+        profile:
+          type: object
+          description: Present for known, attributed operators.
+          properties:
+            first_seen: { type: integer }
+            last_active: { type: integer }
+            alt_wallets_count: { type: integer }
+            tokens_created_count: { type: integer }
+            recent_tokens: { type: array, items: { type: string } }
+            first_funder: { type: object, additionalProperties: true }
+        syndicate:
+          type: object
+          nullable: true
+          description: Only for human-confirmed operator groups.
+          properties:
+            group_id: { type: string }
+            role: { type: string, enum: [funder, member] }
+            n_members: { type: integer }
+            confirmed_scam_mints: { type: integer }
+            anchor_wallet: { type: string }
+        latency_ms: { type: number }
+
+    OperatorTimeline:
+      type: object
+      properties:
+        wallet: { type: string }
+        known: { type: boolean }
+        error: { type: string, description: "Present when known is false, for example 'operator not found'." }
+        operator_id: { type: string, nullable: true }
+        risk_label: { type: string }
+        risk_level:
+          type: string
+          enum: [CRITICAL, HIGH, MEDIUM, LOW, CLEAN, UNKNOWN]
+        total_tokens_in_window: { type: integer }
+        confirmed_rugs_in_window: { type: integer }
+        first_seen: { type: integer, nullable: true }
+        last_seen: { type: integer, nullable: true }
+        tokens:
+          type: array
+          items:
+            type: object
+            properties:
+              mint: { type: string }
+              symbol: { type: string, nullable: true }
+              deployed_at: { type: integer, description: "unix seconds" }
+              risk_score: { type: number }
+              risk_level: { type: string }
+              final_outcome: { type: string, enum: [confirmed_scam, confirmed_safe, pending] }
+              resolved_at: { type: integer, nullable: true }
+              time_to_rug_seconds: { type: integer, nullable: true }
+              platform: { type: string, nullable: true }
+              liquidity_peak_usd: { type: number, nullable: true }
+        buckets_daily:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, description: "UTC date, YYYY-MM-DD" }
+              deployed: { type: integer }
+              rugged: { type: integer }
+              safe: { type: integer }
+              pending: { type: integer }
+        attribution: { type: string, enum: [unverified], description: "Present when the operator's deploy attribution is unverified; the window is then empty (withheld, not clean)." }
+        attribution_note: { type: string }
+        latency_ms: { type: number }
 
     Token:
       type: object
@@ -310,12 +549,24 @@ components:
         risk_level:
           type: string
           enum: [CRITICAL, HIGH, MEDIUM, LOW, CLEAN, UNKNOWN]
+          description: "Score >= 80 CRITICAL, >= 60 HIGH, >= 50 MEDIUM, > 0 LOW; confirmed_scam forces CRITICAL and confirmed_safe forces CLEAN."
         risk_score: { type: number }
         final_outcome: { type: string, enum: [confirmed_scam, confirmed_safe, pending] }
-        flags: { type: array, items: { type: string } }
+        flags:
+          type: array
+          items: { type: string }
+          description: "Display strings with an emoji prefix and optional numeric suffix (for example '🚨 FREEZE_AUTHORITY_ENABLED'); match on the flag name. May be empty. On-demand scans return plain-English reasons instead."
         summary: { type: string, description: "Human-readable EN verdict (language-neutral codes live in `flags`)." }
         is_bundle: { type: boolean }
-        dev_wallet: { type: string, nullable: true }
+        dev_wallet: { type: string, nullable: true, description: "Candidate deployer. See dev_wallet_attribution for whether it is proven; null when refused." }
+        dev_wallet_source: { type: string, nullable: true }
+        dev_wallet_attribution:
+          type: string
+          nullable: true
+          enum: [verified, unverified, refused]
+          description: "verified = deployer proven on-chain; unverified = do not treat dev_wallet as the author; refused = candidate proven NOT to be the author (dev_wallet and operator are null)."
+        dev_wallet_verdict: { type: string, nullable: true, description: "Raw attribution verdict when there is one." }
+        dev_wallet_note: { type: string, nullable: true }
         operator:
           type: object
           nullable: true
@@ -326,6 +577,17 @@ components:
             risk_label: { type: string }
         symbol: { type: string, nullable: true }
         predicted_at: { type: string, nullable: true }
+        launch_platform: { type: string }
+        launch_stage: { type: string, nullable: true }
+        launch_venue: { type: object, nullable: true, additionalProperties: true }
+        has_mint_authority: { type: boolean }
+        has_freeze_authority: { type: boolean }
+        token_extensions:
+          description: "Token-2022 extensions; a list of names on scored mints, an object on on-demand scans."
+        scanned_on_demand: { type: boolean, description: "true when the mint was scanned live because it was not in the scanned set." }
+        risk_factors: { type: array, items: { type: object, additionalProperties: true }, description: "Structured reasons; on-demand scans only." }
+        holders: { type: object, nullable: true, additionalProperties: true, description: "Holder count and concentration; on-demand scans only." }
+        market: { type: object, nullable: true, additionalProperties: true, description: "Market data; on-demand scans only." }
         social:
           type: object
           properties:
@@ -336,23 +598,100 @@ components:
     Cluster:
       type: object
       properties:
-        cluster_id: { type: string }
+        cluster_id: { type: string, description: "Shape cluster_<unix_ts>_<n>." }
         size: { type: integer }
-        first_observed: { type: integer }
-        last_observed: { type: integer }
-        tokens_involved: { type: integer }
+        first_seen: { type: integer, nullable: true }
+        last_seen: { type: integer, nullable: true }
+        shared_funding_source: { type: string, nullable: true }
+        funding_source_classification: { type: string, nullable: true }
+        associated_rugs: { type: integer }
+        associated_tokens: { type: integer, description: "Count in the list view; the detail view returns a list." }
+        risk_score: { type: number }
+        risk_level: { type: string, nullable: true }
+        tags: { type: array, items: { type: string } }
+        sample_wallets: { type: array, items: { type: string }, description: "Up to 5 members." }
+        operators: { type: array, items: { type: string }, description: "Up to 5 members that are tracked operators." }
 
     ClusterDetail:
-      allOf:
-        - $ref: "#/components/schemas/Cluster"
-        - type: object
-          properties:
-            patterns: { type: array, items: { type: string } }
-            associated_operators: { type: array, items: { type: string } }
-            members:
-              type: array
-              items:
-                type: object
-                properties:
-                  wallet: { type: string }
-                  role: { type: string, enum: [deployer, buyer, lp_remover, shill] }
+      type: object
+      properties:
+        cluster_id: { type: string }
+        size: { type: integer }
+        first_seen: { type: integer, nullable: true }
+        last_seen: { type: integer, nullable: true }
+        shared_funding_source: { type: string, nullable: true }
+        funding_source_classification: { type: string, nullable: true }
+        risk_level: { type: string, nullable: true }
+        risk_score: { type: number }
+        tags: { type: array, items: { type: string } }
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              wallet: { type: string }
+              first_seen: { type: integer, nullable: true }
+              tokens_deployed: { type: integer }
+              confirmed_rugs: { type: integer }
+              role: { type: string, enum: [operator, buyer] }
+              attribution: { type: string, enum: [unverified], description: "Present when the member's deploy attribution is unverified; counts are then zeroed." }
+        associated_tokens:
+          type: array
+          description: Up to 50 tokens deployed by operator-role members.
+          items:
+            type: object
+            properties:
+              mint: { type: string }
+              final_outcome: { type: string, enum: [confirmed_scam, confirmed_safe, pending] }
+              predicted_at: { type: number, nullable: true }
+              buyers_from_cluster: { type: integer, description: "Currently always 0." }
+        edges:
+          type: array
+          description: Only emitted when the cluster has a shared_funding_source; often empty.
+          items:
+            type: object
+            properties:
+              from: { type: string }
+              to: { type: string }
+              type: { type: string, enum: [shared_funding] }
+              weight: { type: number }
+        latency_ms: { type: number }
+
+    DrainTrace:
+      type: object
+      properties:
+        wallet: { type: string }
+        origin_token: { type: string, nullable: true }
+        origin_risk: { type: number, nullable: true }
+        hop_count: { type: integer }
+        total_sol_drained: { type: number }
+        reached_cex: { type: boolean }
+        reached_mixer: { type: boolean }
+        hops:
+          type: array
+          items:
+            type: object
+            properties:
+              hop_number: { type: integer }
+              from: { type: string }
+              to: { type: string }
+              amount_sol: { type: number }
+              tx_signature: { type: string }
+              timestamp: { type: number, nullable: true }
+              destination_label: { type: string, nullable: true }
+              destination_category:
+                type: string
+                enum: [exchanges, mixers, bridges, scam_known, unknown]
+              to_entity: { type: object, additionalProperties: true, description: "Present when the destination is a recognised entity." }
+              to_operator: { type: object, additionalProperties: true, description: "Present when the destination is a tracked operator." }
+        endpoints: { type: array, items: { type: object, additionalProperties: true } }
+        spl_outflows: { type: array, items: { type: object, additionalProperties: true } }
+        trace_time_ms: { type: number }
+        latency_ms: { type: number }
+        free_via_victimhood: { type: boolean }
+        victim_verdict: { type: object, nullable: true, additionalProperties: true }
+        cloak_proof: { type: object, nullable: true, additionalProperties: true }
+        coverage: { type: object, additionalProperties: true, description: Present when available. }
+        scanner_findings: { type: array, items: { type: object, additionalProperties: true }, description: Present when available. }
+        scanner_errors: { type: array, items: { type: object, additionalProperties: true }, description: Present when available. }
+        typed_moves: { type: array, items: { type: object, additionalProperties: true }, description: Present when available. }

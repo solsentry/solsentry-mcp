@@ -38,8 +38,10 @@ references at once — they are progressive disclosure files.
 
 ## Tools (MCP)
 
-These tools are exposed by the `@solsentry/mcp` server; references describe
-when and how to invoke them.
+The `@solsentry/mcp` server exposes exactly these 4 tools. Everything else
+in the references (alerts, resolutions, clusters, operator timeline,
+drain-trace) is reached through the public REST API directly, not through an
+MCP tool.
 
 | Tool | Purpose |
 |---|---|
@@ -50,16 +52,34 @@ when and how to invoke them.
 
 ## Risk vocabulary (used across all references)
 
+Tokens and operators use the same level names with different criteria.
+
+Token tiers (from the risk score; a resolved outcome overrides the score):
+
 | Level | Criteria |
 |---|---|
-| `CRITICAL` | 10+ confirmed rugs OR token confirmed as rug |
-| `HIGH` | 5+ confirmed rugs OR risk score ≥ 80 |
-| `MEDIUM` | 2+ confirmed rugs OR risk score ≥ 50 |
-| `LOW` | 1 confirmed rug OR risk score > 0 |
-| `CLEAN` | No rugs, has tracked tokens |
+| `CRITICAL` | Score >= 80, or token confirmed as a rug |
+| `HIGH` | Score >= 60 |
+| `MEDIUM` | Score >= 50 |
+| `LOW` | Score > 0 |
+| `CLEAN` | Token resolved as confirmed safe |
+| `UNKNOWN` | Not scored yet |
+
+Operator levels (from the count of confirmed rugs):
+
+| Level | Criteria |
+|---|---|
+| `CRITICAL` | 10+ confirmed rugs |
+| `HIGH` | 5+ confirmed rugs |
+| `MEDIUM` | 2+ confirmed rugs |
+| `LOW` | 1 confirmed rug |
+| `CLEAN` | Has deployed tokens, no confirmed rugs |
 | `UNKNOWN` | Not in database (never observed deploying) |
 
 `UNKNOWN` is not proof of safety — it means no on-chain history as a deployer.
+An operator response with `attribution: "unverified"` has its counts
+withheld (zeroed) because the deployer link was not verified on-chain: that
+is **not** a clean record. See `docs/risk-scoring.md`.
 
 For the full risk-scoring methodology and threshold definitions see
 `docs/risk-scoring.md` at the package root. For the flag glossary see
@@ -75,14 +95,14 @@ This skill never:
 
 ## Data freshness
 
-The underlying scanner runs continuously on mainnet (~210h+ runtime).
-Operator profiles are updated within 30 seconds of new on-chain activity.
-The skill is safe to use for both real-time decisions (pre-CPI checks) and
-historical research.
+The underlying scanner runs continuously on mainnet; current uptime and
+system numbers are live at `https://api.solsentry.app/v1/stats`. Operator
+profiles are refreshed on a roughly 30-second cycle. The skill is suitable for
+low-latency decisions (pre-CPI checks) and for historical research.
 
 ## Links
 
 - Homepage: https://solsentry.app
 - API: https://api.solsentry.app
 - NPM: https://www.npmjs.com/package/@solsentry/mcp
-- GitHub: https://github.com/solsentryai
+- GitHub: https://github.com/solsentry
