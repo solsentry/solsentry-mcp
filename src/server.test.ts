@@ -59,7 +59,7 @@ test("requireStringArgs throws on a wrong-typed arg", () => {
 test("requireStringArgs passes a valid arg", () => {
   assert.doesNotThrow(() =>
     requireStringArgs(
-      { wallet_address: "4kxscuteRLQdNiTXA33YYsvywAPNA6DQTifswxjL5pH1" },
+      { wallet_address: "DemoXopRatorWa11etExamp1e1111111111111111111" },
       checkOperatorSchema.inputSchema.required,
       "check_operator",
     ),
