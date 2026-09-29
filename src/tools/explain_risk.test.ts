@@ -29,7 +29,7 @@ test("explain_risk recognizes a known operator (total_tokens field)", async () =
       summary: "CRITICAL: 1607 confirmed rug(s) across 1723 deployed token(s) (93.3% rug rate).",
     },
   });
-  const res = await explainRisk(client, { address: "4kxscuteRLQdNiTXA33YYsvywAPNA6DQTifswxjL5pH1" });
+  const res = await explainRisk(client, { address: "DemoXopRatorWa11etExamp1e1111111111111111111" });
   assert.equal(res.source, "operator");
   assert.match(res.explanation, /1607 confirmed rug/);
 });
