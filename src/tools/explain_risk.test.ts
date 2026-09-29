@@ -35,8 +35,9 @@ test("explain_risk recognizes a known operator (total_tokens field)", async () =
 });
 
 test("explain_risk falls through to token for a non-operator address", async () => {
+  // /v1/operator answers known:false for a mint (live, 2026-09-29).
   const client = clientReturning({
-    "/v1/operator/": { known: true, total_tokens: 0 },
+    "/v1/operator/": { known: false },
     "/v1/token/": { known: true, summary: "CRITICAL (risk 100/100): flagged by SolSentry's scanner." },
   });
   const res = await explainRisk(client, { address: "74JfujGDY2dR4Jw1FyacUJC1gQUUSxXCFZmBcikV22Zr" });
@@ -60,4 +61,40 @@ test("explain_risk degrades honestly when nothing is known", async () => {
   const res = await explainRisk(client, { address: "So11111111111111111111111111111111111111112" });
   assert.equal(res.source, "unknown");
   assert.match(res.explanation, /No data found/);
+});
+
+test("explain_risk never sends a tracked wallet to the token scanner", async () => {
+  const seen: string[] = [];
+  const client = {
+    get: async <T>(path: string): Promise<T> => {
+      seen.push(path);
+      if (path.startsWith("/v1/operator/")) return { known: true, total_tokens: 0, summary: "Tracked wallet." } as T;
+      return { known: true, summary: "scanned" } as T;
+    },
+  } as SolSentryClient;
+  const res = await explainRisk(client, { address: "DemoXopRatorWa11etExamp1e1111111111111111111" });
+  assert.equal(res.source, "operator");
+  assert.equal(seen.filter((p) => p.startsWith("/v1/token/")).length, 0);
+});
+
+test("explain_risk says withheld counts are not a clean record", async () => {
+  const client = clientReturning({
+    "/v1/operator/": { known: true, total_tokens: 0, attribution: "unverified", summary: "UNKNOWN." },
+  });
+  const res = await explainRisk(client, { address: "DemoXopRatorWa11etExamp1e1111111111111111111" });
+  assert.equal(res.source, "operator");
+  assert.match(res.explanation, /withheld/);
+  assert.match(res.explanation, /does not mean clean/);
+});
+
+test("explain_risk reports rate limiting instead of 'no data'", async () => {
+  const { SolSentryError } = await import("../client.js");
+  const client = {
+    get: async () => {
+      throw new SolSentryError("SolSentry API 429: Too Many Requests", 429, "");
+    },
+  } as unknown as SolSentryClient;
+  const res = await explainRisk(client, { address: "So11111111111111111111111111111111111111112" });
+  assert.equal(res.source, "unknown");
+  assert.match(res.explanation, /HTTP 429/);
 });
