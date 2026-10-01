@@ -2,6 +2,20 @@
 
 All notable changes to `@solsentry/mcp` are documented here.
 
+## [0.3.2] - unreleased
+
+### Fixed
+- `explain_risk` no longer sends a wallet the operator graph tracks to
+  `/v1/token` (which starts an on-demand token scan): `/v1/operator` answers
+  `known:false` for every address it does not track, mints included, so
+  `known:true` is answered from the operator profile.
+- `explain_risk` explains withheld counts (`attribution: "unverified"`) instead
+  of presenting a zero as a clean record, and reports HTTP 429/502/503/504 as
+  "try again" instead of "no data found".
+- The npm tarball no longer ships the compiled tests (`dist/**/*.test.*`).
+- Skill references and docs realigned with the live API (flags, thresholds,
+  x402 prices, response fields).
+
 ## [0.3.1] - 2026-07-11
 
 ### Fixed

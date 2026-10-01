@@ -1,124 +1,174 @@
 # Flag Glossary
 
-SolSentry alerts emit machine-readable flags in `SCREAMING_SNAKE_CASE`.
-Each flag corresponds to a specific on-chain pattern that contributed to
-a token's risk score. This document defines the canonical flag vocabulary
-used in alerts, REST responses, and the Telegram alert stream.
+SolSentry token scans attach **flags** to a token's risk verdict. Each flag
+is a short human-readable string describing one on-chain or market pattern
+the scanner observed. Flags appear in the `flags` array of `/v1/token/{mint}`
+and `/v1/predictions/{mint}` and in each item of `/v1/alerts/recent`.
 
-## Format
+## Format: match on the token name, not the whole string
+
+Flags are **display strings**, not stable enum values. Each one starts with
+an emoji prefix and may carry a numeric or parenthetical suffix that varies
+per token:
 
 ```
-FLAG_NAME              Score impact   Verifiable from
+🚨 FREEZE_AUTHORITY_ENABLED
+⚠️ TOP_HOLDER_OWNS_77%
+🚨 VERY_LOW_LIQUIDITY ($1,234)
+⚠️ VERY_FEW_HOLDERS (7)
+✅ LIQUIDITY_LOCKED_100%
 ```
 
-Score impact is the typical contribution to the token risk score when
-this flag fires. Combinations of flags are sub-additive (overlapping
-signals don't double-count).
+Integrators and agents should therefore **match on the flag name token**
+(for example `FREEZE_AUTHORITY_ENABLED`, or the prefix `TOP_HOLDER_OWNS_`),
+never on the full string. Do not depend on the emoji or on the numbers.
 
-## Mint & authority flags
+Emoji prefix convention:
 
-| Flag | Score impact | Verifiable from |
-|---|---|---|
-| `MINT_AUTHORITY_ENABLED` | +25 | `getAccountInfo(mint)` → `mintAuthority` not null |
-| `FREEZE_AUTHORITY_ACTIVE` | +15 | `getAccountInfo(mint)` → `freezeAuthority` not null |
-| `MINT_AUTHORITY_RECENTLY_REVOKED` | -10 | TX history shows authority transfer to null after launch |
+| Prefix | Meaning |
+|---|---|
+| `🚨` | High-severity signal |
+| `⚠️` | Warning-level signal |
+| `✅` | Positive / mitigating signal |
+| `ℹ️` | Informational (for example a recognised known token) |
+| other (`🔴`, `🟡`, `🍯`, `💸`, `🔒`, `🤖`, `🛡️`, `👑`) | Specific external-security, bundle-detector or platform annotations |
 
-A live mint authority means the deployer can mint unlimited supply at
-any time, diluting all holders. A live freeze authority means any
-holder's tokens can be frozen unilaterally.
+Flags contribute to the risk score, but the per-flag weights are tuned
+continuously and are not published (see `docs/risk-scoring.md`). The final
+`risk_level` is derived from the score, and a resolved outcome can override
+it (`confirmed_scam` forces `CRITICAL`, `confirmed_safe` forces `CLEAN`).
+
+## Things to know before reading `flags`
+
+- The array can be **empty** on a scored token. An empty `flags` array is not
+  a clean bill of health; read `risk_level`, `risk_score`, `summary` and
+  `operator` as well.
+- A token the scanner had not seen yet may be scanned on demand
+  (`scanned_on_demand: true` in the response). That path returns
+  **plain-English reasons** in `flags` (for example "Freeze authority active
+  ...") plus a structured `risk_factors` array, instead of the emoji flags
+  below.
+- The vocabulary evolves as new attack patterns are added. Treat unknown flag
+  names as valid and show them as-is.
+
+## Mint and authority flags
+
+| Flag name | Trigger |
+|---|---|
+| `MINT_AUTHORITY_ENABLED` | Mint authority is still set: supply can be inflated |
+| `FREEZE_AUTHORITY_ENABLED` | Freeze authority is still set: holder accounts can be frozen |
+| `MINT_FREEZE_COMBO` | Both authorities are set at once |
+| `PERMANENT_DELEGATE` | Token-2022 permanent delegate present |
+| `TRANSFER_HOOK` | Token-2022 transfer hook present |
+| `TRANSFER_FEE` | Token-2022 transfer fee configured |
+| `MINT_CLOSE_AUTHORITY` | Token-2022 mint close authority present |
+| `T22_<name>` | Other Token-2022 extension classified as risky (prefix `T22_`) |
+| `DRAINABLE` / `FREEZABLE` | External security enrichment reports the token as drainable / freezable |
+
+Verifiable from: the mint account (`getAccountInfo(mint)` with
+`jsonParsed` encoding shows `mintAuthority`, `freezeAuthority` and any
+Token-2022 extensions).
 
 ## Holder concentration flags
 
-| Flag | Score impact | Verifiable from |
-|---|---|---|
-| `TOP_HOLDER_OWNS_100%` | +40 | Largest holder = total supply |
-| `TOP_HOLDER_OWNS_>50%` | +25 | Largest holder > 50% of supply |
-| `TOP_HOLDER_OWNS_>30%` | +15 | Largest holder > 30% of supply |
-| `VERY_FEW_HOLDERS` | +20 | < 10 unique holders |
-| `WHALE_CLUSTER_DETECTED` | +20 | Top 10 holders = same cluster |
-
-Concentration is the strongest predictor of rug execution capacity. A
-single wallet holding 100% of supply can drain the LP in one transaction.
-
-## Liquidity flags
-
-| Flag | Score impact | Verifiable from |
-|---|---|---|
-| `LP_NOT_LOCKED` | +20 | Liquidity pool tokens not held by a known lock contract |
-| `LP_LOCK_EXPIRES_<24H` | +15 | LP locked but unlock window opens within 24 hours |
-| `LIQUIDITY_<$1K` | +15 | Total LP value in USD below threshold |
-| `LIQUIDITY_RECENTLY_REMOVED` | +35 | Sudden LP withdrawal observed in scan window |
-
-## Deployer flags
-
-| Flag | Score impact | Verifiable from |
-|---|---|---|
-| `NEW_WALLET_DEPLOYER` | +10 | Deployer wallet has < 24h of prior on-chain activity |
-| `SERIAL_RUGGER_DEPLOYER` | +25 | Deployer is in the operator database with ≥ 2 confirmed rugs |
-| `KNOWN_BUNDLER_FUNDER` | +20 | Deployer was funded by a wallet known to fund coordinated launches |
-| `DEPLOYER_OWNS_MAJORITY` | +20 | Deployer wallet still holds > 50% of supply |
-
-## Bundle / coordination flags
-
-| Flag | Score impact | Verifiable from |
-|---|---|---|
-| `BUNDLE_INSIDER_LP_REMOVAL` | +35 | Wallets that bought in the launch block also removed LP |
-| `SAME_BLOCK_BUYERS_>10` | +20 | More than 10 wallets bought in the same block as launch |
-| `COORD_DUMP_DETECTED` | +30 | Multiple wallets sold within 30s of each other |
-| `BOT_CLUSTER_PARTICIPATION` | +20 | Buyers belong to a known coordinated cluster |
-
-## Metadata flags
-
-| Flag | Score impact | Verifiable from |
-|---|---|---|
-| `MISSING_METADATA` | +5 | Token has no name, symbol, or image set |
-| `IMITATING_KNOWN_TOKEN` | +25 | Name/symbol matches a major token (USDC, BONK, etc) |
-| `SUSPICIOUS_NAME_PATTERN` | +10 | Common scam template ("X Token", "100x", etc) |
-
-## State / lifecycle flags
-
-| Flag | Score impact | Verifiable from |
-|---|---|---|
-| `JUST_LAUNCHED` | informational | Token < 1 hour old |
-| `HONEYPOT_DETECTED` | +50 | Sells fail in simulation, buys succeed |
-| `PRICE_CRASH_>90%` | +40 | Price dropped > 90% in scan window — likely rug execution |
-| `VOLUME_DEAD` | informational | 24h volume < $100 — abandoned |
-
-## Whitelist / safe flags
-
-These are positive flags that reduce the score (known-good tokens):
-
-| Flag | Score impact | Verifiable from |
-|---|---|---|
-| `KNOWN_TOKEN` | force-set to 10 | Hardcoded whitelist (SOL, USDC, USDT, BONK, etc) |
-| `LEGITIMATE_NFT` | informational | Identified as NFT, not a fungible token |
-| `HIGH_LIQUIDITY` | -10 | Liquidity > $1M (rug economically less attractive) |
-| `LP_LOCKED_>30D` | -10 | Liquidity locked for over 30 days |
-
-## Process / scan-state flags
-
-These are not risk signals — they describe the scan itself:
-
-| Flag | Meaning |
+| Flag name | Trigger |
 |---|---|
-| `ANALYSIS_FAILED` | Scanner could not complete analysis (RPC error, timeout, etc) |
-| `EXCEPTION` | Unhandled error during scan — manual review recommended |
-| `GHOST_TOKEN_SKIPPED` | Token has zero on-chain footprint, scan deferred |
-| `EMPTY_WALLET` | Wallet checked has zero token holdings |
-| `MANY_TOKENS` | Wallet holds > 200 tokens — full enrichment skipped for cost |
+| `TOP_HOLDER_OWNS_<n>%` | Largest holder owns more than 50% of supply (`<n>` is the actual share) |
+| `HIGH_CONCENTRATION_<n>%` | Largest holder owns between 30% and 50% |
+| `MODERATE_CONCENTRATION_<n>%` | Largest holder owns between 15% and 30% |
+| `TOP_10_CONTROL_<n>%` | Top 10 holders together own more than 80% |
+| `VERY_FEW_HOLDERS (<count>)` | Fewer than 10 holders |
+| `LOW_HOLDER_COUNT (<count>)` | Fewer than 50 holders |
+| `FEW_HOLDERS (<count>)` | Fewer than 200 holders |
+| `MANY_HOLDERS (<count>)` | Positive: very large holder base |
+| `HOLDER_DATA_UNAVAILABLE` | Holder data could not be fully retrieved |
+| `LOW_DATA_CONFIDENCE_FLOOR` / `LOW_DATA_SOFT_FLOOR` | Holder data was unreliable, so a minimum risk floor was applied |
+
+## Liquidity and market flags
+
+| Flag name | Trigger |
+|---|---|
+| `VERY_LOW_LIQUIDITY ($<usd>)` | Liquidity below $10k |
+| `LOW_LIQUIDITY ($<usd>)` | Liquidity below $50k |
+| `HIGH_LIQUIDITY ($<usd>)` | Positive: liquidity above $500k |
+| `LIQUIDITY_LOCKED_<n>%` | Positive: at least 90% of liquidity locked (from external security data) |
+| `PARTIAL_LOCK_<n>%` | Some, but under 90%, of liquidity locked |
+| `SUSPICIOUS_VOLUME (<x>x liq)` | 24h volume is more than 10 times liquidity |
+| `PRICE_CRASH (<pct>%)` | 24h price drop worse than -80% |
+| `MAJOR_DECLINE (<pct>%)` | 24h price drop worse than -50% |
+| `JUST_LAUNCHED (<n>m ago)` | Token is under 1 hour old |
+| `NEW_TOKEN (<n>h old)` | Token is under 24 hours old |
+| `HONEYPOT_RISK (<n>%)` | External security data reports a honeypot probability above 50% |
+| `TAX_<n>%` | External security data reports a buy/sell tax |
+
+## Launch platform flags
+
+| Flag name | Trigger |
+|---|---|
+| `PUMP_MAYHEM` | Launched in the pump.fun "mayhem" stage |
+| `PUMP_KOTH` | pump.fun "king of the hill" stage |
+| `MANUAL_DEPLOY` | Deployed manually, not through a launchpad |
+| `UNKNOWN_PLATFORM` | Launch platform could not be identified |
+| `RAW_PLATFORM_AUTHORITY_RETAINED` | Deployed directly on an AMM with mint or freeze authority retained (this one has no emoji prefix) |
+
+## Bundle and coordination flags
+
+These come from the bundle forensics pass over early swaps.
+
+| Flag name | Trigger |
+|---|---|
+| `SAME_BLOCK_BUNDLES` | Coordinated buys in the same block as the launch |
+| `SHARED_FUNDER_SAME_BLOCK` | Same-block buyers share a non-exchange funder |
+| `TIGHT_CLUSTERS` / `BOT_CONFIRMED_TIGHT_CLUSTERS` | Buyers acting inside a tight time window; the second form is bot-signature confirmed |
+| `HIGH_COORD_SOL` / `COORD_SOL` | Large SOL volume moved in coordinated buys |
+| `COORD_DUMP` | Several wallets selling together |
+| `HIGH_COORD_RATIO` | Most wallets trading the token appear coordinated |
+| `BOT_ACTIVITY` | Informational: bot or infrastructure clusters were excluded from the coordination count |
+| `CEX_FUNDER_FP_GUARD` | Informational: same-block bundles suppressed because the funder is an exchange |
+| `NO_BUNDLES_DETECTED (<n> swaps analyzed)` | Positive: enough swaps analysed, no bundling found |
+| `ANALYSIS_INCOMPLETE` | Bundle analysis could not finish |
+
+## Operator, identity and threat flags
+
+| Flag name | Trigger |
+|---|---|
+| `DEV_VERIFIED_RUGS (<n>)` | The token's deployer has at least 5 on-chain-verified rugs. This is shown as evidence next to the verdict and is not used to raise the tier |
+| `KNOWN_DRAINER (<label>)` | Creator matches a drainer catalog entry (forces `CRITICAL`) |
+| `SYMBOL_IMPERSONATION (claims <SYMBOL>, mint not canonical)` | Symbol claims a protected token but the mint is not the canonical one |
+| `METADATA_THREAT (<kinds>)` | Weaponised token metadata detected (for example hidden control characters) |
+| `KNOWN_TOKEN (<label>)` | Informational: recognised legitimate token; risk is capped |
+| `LP_POSITION_NFT (<signal>)` | Informational: the mint is an LP-position NFT, not a fungible token |
+| `CONFIRMED_SAFE (<label>)` | Informational: on the confirmed-safe list |
+| `INSIGHTX_SAFE` / `INSIGHTX_MID` / `INSIGHTX_DANGER` (`(<n>/100)`) | External security score bucket |
+
+## Scan-state flags
+
+These describe the scan itself, not the token:
+
+| Flag name | Meaning |
+|---|---|
+| `FAST_SCAN_TIMEOUT`, `DEEP_SCAN_TIMEOUT`, `FORENSIC_SCAN_TIMEOUT` | A scan stage timed out; the verdict may be based on partial data |
+| `DEEP_SCAN_PARTIAL`, `FORENSIC_SCAN_PARTIAL` | A scan stage returned partial data |
+| `ANALYSIS_FAILED` | Scanner could not complete analysis |
+| `GHOST_TOKEN_SKIPPED` | Token has no on-chain footprint yet; scan deferred |
+
+## Contract analysis flags
+
+`/v1/contract-analysis/{program_id}` uses its own plain uppercase flags (no
+emoji), such as `KNOWN_DRAINER`, `CATALOG_SAFE_TOKEN`, `UPGRADABLE`,
+`IMMUTABLE`, `MINT_AUTHORITY_PRESENT`, `FREEZE_AUTHORITY_PRESENT`,
+`RISKY_T22_EXTENSION` and `IMPERSONATOR`.
 
 ## Why publish the flag glossary?
 
 Flag names appear in alerts that users see (Telegram, REST responses,
-Claude tool outputs) but the flags themselves are dialect — they don't
-explain themselves. Publishing the canonical glossary lets:
+Claude tool outputs) but they are terse. Publishing the vocabulary lets:
 
 - Integrators map flags to their own UI conventions
 - Auditors verify which flag triggered which alert
-- Researchers cite specific flags in academic / industry threat reports
-- Devs developing token launches understand which patterns to avoid
-  triggering
+- Researchers cite specific flags in threat reports
+- Developers launching tokens understand which patterns to avoid
 
-The flag list evolves as new attack patterns emerge. New flags will be
-added here when they ship to production. Removed flags will be marked
-deprecated rather than deleted.
+Flag weights and detection heuristics are intentionally not published. New
+flags are added as new attack patterns ship; the live API is the authority
+for what is emitted today.
