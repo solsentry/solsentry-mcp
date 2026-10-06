@@ -2,6 +2,11 @@
 
 All notable changes to `@solsentry/mcp` are documented here.
 
+## [0.3.3] - 2026-10-06
+
+### Changed
+- Release published from CI via npm trusted publishing (OIDC) in the `release` environment; no code change.
+
 ## [0.3.2] - unreleased
 
 ### Fixed
